@@ -1,0 +1,15 @@
+syntax = "proto3";
+
+package grabber;
+
+option go_package = "github.com/SphericalPotatoInVacuum/soa-message-queues/proto_gen/grabber;grabber";
+
+message GrabRequest {
+  string RequestID = 1;
+  string URL = 2;
+}
+
+message GrabResponse {
+  string RequestID = 1;
+  repeated string URLs = 2;
+}

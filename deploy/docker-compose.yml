@@ -1,0 +1,45 @@
+services:
+  rabbitmq:
+    image: rabbitmq:3-management
+    environment:
+      RABBITMQ_DEFAULT_USER: "$RABBITMQ_USER"
+      RABBITMQ_DEFAULT_PASS: "$RABBITMQ_PASS"
+    ports:
+      - 15672:15672
+      - 5672:5672
+
+  grabber:
+    image: sphericalpotatoinvacuum/pathfinder-grabber
+    build:
+      context: ../
+      dockerfile: ./build/grabber/Dockerfile
+    environment:
+      RABBITMQ_USER: "$RABBITMQ_USER"
+      RABBITMQ_PASS: "$RABBITMQ_PASS"
+    depends_on:
+      - rabbitmq
+
+  server:
+    image: sphericalpotatoinvacuum/pathfinder-server
+    build:
+      context: ../
+      dockerfile: ./build/server/Dockerfile
+    environment:
+      PATHFINDER_SERVER_PORT: 51075
+      RABBITMQ_USER: "$RABBITMQ_USER"
+      RABBITMQ_PASS: "$RABBITMQ_PASS"
+      RABBITMQ_HOST: "rabbitmq"
+    ports:
+      - 51075:51075
+    depends_on:
+      - rabbitmq
+      - grabber
+    
+  client:
+    image: sphericalpotatoinvacuum/pathfinder-client
+    build:
+      context: ../
+      dockerfile: ./build/client/Dockerfile
+    profiles: ["client"]
+    environment:
+      PATHFINDER_SERVER_ADDR: server:51075

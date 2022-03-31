@@ -1,0 +1,19 @@
+syntax = "proto3";
+
+package pathfinder;
+
+option go_package = "github.com/SphericalPotatoInVacuum/soa-message-queues/proto_gen/pathfinder;pathfinder";
+
+service Pathfinder {
+  rpc Find(FindRequest) returns (FindResponse);
+}
+
+message FindRequest {
+  string URL1 = 1;
+  string URL2 = 2;
+}
+
+message FindResponse {
+  int32 Length = 1;
+  repeated string Path = 2;
+}
