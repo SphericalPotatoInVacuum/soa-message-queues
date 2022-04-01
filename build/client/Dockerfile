@@ -5,8 +5,8 @@ WORKDIR /go/src/github.com/SphericalPotatoInVacuum/soa-message-queues
 COPY go.mod go.sum ./
 RUN go mod download
 
-COPY internal ./internal/
 COPY proto_gen ./proto_gen/
+COPY internal ./internal/
 COPY cmd/client ./cmd/client/
 RUN CGO_ENABLED=0 go build -o client ./cmd/client/main.go
 

@@ -1,9 +1,13 @@
 package queue
 
 import (
+	"time"
+
+	"github.com/SphericalPotatoInVacuum/soa-message-queues/internal/serverwaiter"
 	"github.com/SphericalPotatoInVacuum/soa-message-queues/internal/utils"
 	log "github.com/sirupsen/logrus"
 	"github.com/streadway/amqp"
+	"golang.org/x/net/context"
 )
 
 var failOnError = utils.FailOnError
@@ -16,15 +20,25 @@ type Connection struct {
 }
 
 func NewConnection(addr string) *Connection {
+	contextLogger := log.WithField("addr", addr)
+
+	contextLogger.Info("Waiting for rabbitmq")
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(10)*time.Second)
+	defer cancel()
+	if err := serverwaiter.Wait(ctx, addr); err != nil {
+		contextLogger.WithError(err).Fatal("Rabbitmq failed to start in time")
+	}
+	contextLogger.Info("Rabbitmq is ready")
+
 	// establish connection to the RabbitMQ
 	conn, err := amqp.Dial(addr)
 	failOnError(err, "Failed to connect to RabbitMQ")
-	log.Infof("Connected to %s", addr)
+	contextLogger.Info("Connected to rabbitmq")
 
 	// open channel
 	ch, err := conn.Channel()
 	failOnError(err, "Failed to open a channel")
-	log.Info("Opened a channel")
+	contextLogger.Info("Opened a channel")
 
 	// declare queues
 	grabberQueue, err := ch.QueueDeclare(
@@ -36,7 +50,7 @@ func NewConnection(addr string) *Connection {
 		nil,       // arguments
 	)
 	failOnError(err, "Failed to declare a queue")
-	log.Infof("Declared a %s queue", grabberQueue.Name)
+	contextLogger.WithField("queue", grabberQueue.Name).Info("Declared a queue")
 
 	resultQueue, err := ch.QueueDeclare(
 		"result", // name
@@ -47,7 +61,7 @@ func NewConnection(addr string) *Connection {
 		nil,      // arguments
 	)
 	failOnError(err, "Failed to declare a queue")
-	log.Infof("Declared a %s queue", resultQueue.Name)
+	contextLogger.WithField("queue", resultQueue.Name).Info("Declared a queue")
 
 	return &Connection{
 		conn:         conn,
