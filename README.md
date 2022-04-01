@@ -31,11 +31,11 @@ makefile.
 # Simple start 
 
 ```bash
-RABBITMQ_USER=guest RABBITMQ_PASS=quest source <(curl -s https://raw.githubusercontent.com/SphericalPotatoInVacuum/soa-message-queues/main/scripts/start_server.sh)
+export RABBITMQ_USER=guest RABBITMQ_PASS=quest; source <(curl -s https://raw.githubusercontent.com/SphericalPotatoInVacuum/soa-message-queues/main/scripts/start_server.sh)
 ```
 
 # Simple tests
 
 ```bash
-RABBITMQ_USER=guest RABBITMQ_PASS=quest source <(curl -s https://raw.githubusercontent.com/SphericalPotatoInVacuum/soa-message-queues/main/scripts/run_tests.sh)
+export RABBITMQ_USER=guest RABBITMQ_PASS=quest; source <(curl -s https://raw.githubusercontent.com/SphericalPotatoInVacuum/soa-message-queues/main/scripts/run_tests.sh)
 ```
