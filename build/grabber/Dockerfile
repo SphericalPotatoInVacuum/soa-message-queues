@@ -12,6 +12,7 @@ RUN CGO_ENABLED=0 go build -o grabber ./cmd/grabber/main.go
 
 FROM scratch
 WORKDIR /root/
+COPY --from=builder /etc/ssl/certs /etc/ssl/certs/
 COPY --from=builder /go/src/github.com/SphericalPotatoInVacuum/soa-message-queues/grabber ./
 
 CMD ["./grabber"]
