@@ -3,12 +3,14 @@ package main
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/Songmu/prompter"
 	"github.com/SphericalPotatoInVacuum/soa-message-queues/internal/utils"
 	pb "github.com/SphericalPotatoInVacuum/soa-message-queues/proto_gen/pathfinder"
 	"github.com/briandowns/spinner"
+	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
 )
 
@@ -26,21 +28,55 @@ func (c *Client) Destroy() {
 }
 
 func NewClient(addr string) *Client {
+	const timeout = 10
+
 	s := spinner.New(spinner.CharSets[13], 100*time.Millisecond)
 	s.Reverse()
 	s.Suffix = fmt.Sprintf(" Connecting to %s", addr)
 	s.FinalMSG = fmt.Sprintf("Connected to %s!\n", addr)
 	s.Start()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), timeout*time.Second)
 	defer cancel()
-	conn, err := grpc.DialContext(ctx, addr, grpc.WithInsecure(), grpc.WithBlock())
+
+	g, ctx := errgroup.WithContext(ctx)
+
+	connChan := make(chan *grpc.ClientConn, 1)
+
+	g.Go(func() error {
+		conn, err := grpc.DialContext(ctx, addr, grpc.WithInsecure(), grpc.WithBlock())
+		if err == nil {
+			connChan <- conn
+			cancel()
+		}
+		return err
+	})
+
+	start := time.Now()
+	g.Go(func() error {
+		for i := 1; i <= timeout; i++ {
+			select {
+			case <-ctx.Done():
+				return nil
+			default:
+				break
+			}
+
+			s.Suffix = fmt.Sprintf(" Connecting to %s (%.0fs)", addr, timeout-time.Now().Sub(start).Seconds())
+			time.Sleep(1 * time.Second)
+		}
+		return nil
+	})
+
+	err := g.Wait()
 	if err != nil {
 		s.FinalMSG = "😭 Could not connect!\n"
 		s.Stop()
 	}
 	utils.FailOnError(err, "Connection timed out")
 	s.Stop()
+
+	conn := <-connChan
 
 	return &Client{
 		grpcStub: pb.NewPathfinderClient(conn),
@@ -58,12 +94,12 @@ func main() {
 
 	s := spinner.New(spinner.CharSets[13], 100*time.Millisecond)
 	s.Reverse()
-	s.Suffix = "Finding a path..."
+	s.Suffix = " Finding a path..."
 	s.FinalMSG = "Found path: "
 
 	s.Start()
 	resp, err := client.Find(context.Background(), &pb.FindRequest{URL1: url1, URL2: url2})
 	utils.FailOnError(err, "Could not get result")
 	s.Stop()
-	fmt.Println(resp.String())
+	fmt.Printf("%s, %d hops\n", strings.Join(resp.Path, " => "), resp.Length)
 }
