@@ -4,11 +4,12 @@ import (
 	"os"
 
 	log "github.com/sirupsen/logrus"
+	"github.com/ttacon/chalk"
 )
 
 func FailOnError(err error, msg string) {
 	if err != nil {
-		log.Fatalf("%s: %s", msg, err)
+		log.Fatalf("%s: %s", chalk.Red.Color(msg), err)
 	}
 }
 

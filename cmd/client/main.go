@@ -1,15 +1,14 @@
 package main
 
 import (
-	"bufio"
 	"context"
-	"os"
-	"strings"
+	"fmt"
 	"time"
 
+	"github.com/Songmu/prompter"
 	"github.com/SphericalPotatoInVacuum/soa-message-queues/internal/utils"
 	pb "github.com/SphericalPotatoInVacuum/soa-message-queues/proto_gen/pathfinder"
-	log "github.com/sirupsen/logrus"
+	"github.com/briandowns/spinner"
 	"google.golang.org/grpc"
 )
 
@@ -27,12 +26,21 @@ func (c *Client) Destroy() {
 }
 
 func NewClient(addr string) *Client {
-	log.Infof("Trying to connect to server %s", addr)
-	conn, err := grpc.Dial(addr, grpc.WithInsecure(), grpc.WithBlock(), grpc.WithTimeout(time.Duration(30)*time.Second))
+	s := spinner.New(spinner.CharSets[13], 100*time.Millisecond)
+	s.Reverse()
+	s.Suffix = fmt.Sprintf(" Connecting to %s", addr)
+	s.FinalMSG = fmt.Sprintf("Connected to %s!\n", addr)
+	s.Start()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	conn, err := grpc.DialContext(ctx, addr, grpc.WithInsecure(), grpc.WithBlock())
 	if err != nil {
-		log.Fatalf("Could not connect: %v", err)
+		s.FinalMSG = "😭 Could not connect!\n"
+		s.Stop()
 	}
-	log.Infof("Connected to server: %s", addr)
+	utils.FailOnError(err, "Connection timed out")
+	s.Stop()
 
 	return &Client{
 		grpcStub: pb.NewPathfinderClient(conn),
@@ -41,27 +49,21 @@ func NewClient(addr string) *Client {
 }
 
 func main() {
-	log.SetFormatter(&log.TextFormatter{
-		ForceColors: true,
-	})
-
-	addr := getEnv("PATHFINDER_SERVER_ADDR", "127.0.0.1:51075")
+	addr := prompter.Prompt("Enter pathfinder server address: ", "server:51075")
 	client := NewClient(addr)
 	defer client.Destroy()
 
-	reader := bufio.NewReader(os.Stdin)
+	url1 := prompter.Prompt("Enter first URL", "https://en.wikipedia.org/wiki/Logitech")
+	url2 := prompter.Prompt("Enter second URL", "https://en.wikipedia.org/wiki/Monsoon")
 
-	url1, err := reader.ReadString('\n')
-	utils.FailOnError(err, "Could not read string")
-	url1 = strings.TrimSpace(url1)
+	s := spinner.New(spinner.CharSets[13], 100*time.Millisecond)
+	s.Reverse()
+	s.Suffix = "Finding a path..."
+	s.FinalMSG = "Found path: "
 
-	url2, err := reader.ReadString('\n')
-	utils.FailOnError(err, "Could not read string")
-	url2 = strings.TrimSpace(url2)
-
+	s.Start()
 	resp, err := client.Find(context.Background(), &pb.FindRequest{URL1: url1, URL2: url2})
-	if err != nil {
-		log.Fatal(err)
-	}
-	log.Info(resp.String())
+	utils.FailOnError(err, "Could not get result")
+	s.Stop()
+	fmt.Println(resp.String())
 }
