@@ -2,10 +2,12 @@ package main
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/SphericalPotatoInVacuum/soa-message-queues/internal/grabber"
 	"github.com/SphericalPotatoInVacuum/soa-message-queues/internal/utils"
-	log "github.com/sirupsen/logrus"
+	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
 )
 
 var getEnv = utils.GetEnv
@@ -20,9 +22,7 @@ func getRabbitAddr() string {
 }
 
 func main() {
-	log.SetFormatter(&log.TextFormatter{
-		ForceColors: true,
-	})
+	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr})
 
 	g := grabber.NewGrabber(getRabbitAddr())
 	g.Run()

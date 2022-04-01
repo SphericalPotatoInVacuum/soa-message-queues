@@ -9,7 +9,7 @@ import (
 	"github.com/PuerkitoBio/goquery"
 	"github.com/SphericalPotatoInVacuum/soa-message-queues/internal/queue"
 	grabber_pb "github.com/SphericalPotatoInVacuum/soa-message-queues/proto_gen/grabber"
-	log "github.com/sirupsen/logrus"
+	"github.com/rs/zerolog/log"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -39,28 +39,29 @@ func checkHref(href string) bool {
 	return true
 }
 
-func grab(urlStr string) ([]string, error) {
-	log.WithField(
-		"url", urlStr,
-	).Info("Grabbing url")
+func grab(req *grabber_pb.GrabRequest) ([]string, error) {
+	sublogger := log.With().
+		Str("grabId", req.RequestID).
+		Logger()
+	sublogger.Info().Msg("Grabbing url")
 
-	u, err := url.Parse(urlStr)
+	u, err := url.Parse(req.URL)
 	baseUrl := fmt.Sprintf("%s://%s", u.Scheme, u.Hostname())
 
 	res, err := http.Get(u.String())
 	if err != nil {
-		log.Fatal(err)
+		return nil, err
 	}
 	defer res.Body.Close()
 
 	if res.StatusCode != 200 {
-		log.Fatalf("status code error: %d %s", res.StatusCode, res.Status)
+		return nil, fmt.Errorf("status code error: %d %s", res.StatusCode, res.Status)
 	}
 
 	// Load the HTML document
 	doc, err := goquery.NewDocumentFromReader(res.Body)
 	if err != nil {
-		log.Fatal(err)
+		return nil, err
 	}
 
 	links := make([]string, 0)
@@ -95,23 +96,24 @@ func (g *Grabber) Run() {
 	for msg := range msgs {
 		var req grabber_pb.GrabRequest
 		proto.Unmarshal(msg.Body, &req)
-		log.WithField("reqID", req.RequestID).Info("Got task from queue")
+		sublogger := log.With().
+			Str("grabId", req.RequestID).
+			Logger()
+		sublogger.Info().Msg("Got task from queue")
 
-		links, err := grab(req.URL)
+		links, err := grab(&req)
 		if err != nil {
 			msg.Nack(false, false)
-			log.Error(err)
+			log.Err(err).Msg("Could not grab URL")
 			continue
 		}
-		log.WithField(
-			"url", req.URL,
-		).Info("Grabbed url")
+		sublogger.Info().Msg("Grabbed url")
 		body, err := proto.Marshal(&grabber_pb.GrabResponse{
 			RequestID: req.RequestID,
 			URLs:      links,
 		})
 		g.conn.ResultProduce(body)
 		msg.Ack(false)
-		log.WithField("reqID", req.RequestID).Info("Put results to queue")
+		sublogger.Info().Msg("Put results to queue")
 	}
 }

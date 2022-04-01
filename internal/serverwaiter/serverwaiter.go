@@ -8,14 +8,16 @@ import (
 	"net/url"
 	"time"
 
-	log "github.com/sirupsen/logrus"
+	"github.com/rs/zerolog/log"
 	"golang.org/x/sync/errgroup"
 )
 
 func Wait(ctx context.Context, URL string) error {
-	contextLogger := log.WithField("addr", URL)
+	sublogger := log.With().
+		Str("addr", URL).
+		Logger()
 
-	contextLogger.Info("Waiting for address")
+	sublogger.Info().Msg("Waiting for address")
 	u, err := url.Parse(URL)
 	if err != nil {
 		return err
@@ -40,13 +42,13 @@ func Wait(ctx context.Context, URL string) error {
 				conn.Close()
 				return nil
 			}
-			contextLogger.WithError(err).Info("Target is not up, retrying")
+			sublogger.Info().AnErr("err", err).Msg("Target is not up, retrying")
 			time.Sleep(time.Duration(1) * time.Second)
 		}
 	})
 	err = g.Wait()
 	if err != nil {
-		contextLogger.WithError(err).Error("Wait timed out")
+		sublogger.Error().Msg("Wait timed out")
 	}
 	return err
 }

@@ -5,7 +5,7 @@ import (
 
 	"github.com/SphericalPotatoInVacuum/soa-message-queues/internal/serverwaiter"
 	"github.com/SphericalPotatoInVacuum/soa-message-queues/internal/utils"
-	log "github.com/sirupsen/logrus"
+	"github.com/rs/zerolog/log"
 	"github.com/streadway/amqp"
 	"golang.org/x/net/context"
 )
@@ -20,25 +20,27 @@ type Connection struct {
 }
 
 func NewConnection(addr string) *Connection {
-	contextLogger := log.WithField("addr", addr)
+	sublogger := log.With().
+		Str("addr", addr).
+		Logger()
 
-	contextLogger.Info("Waiting for rabbitmq")
+	sublogger.Info().Msg("Waiting for rabbitmq")
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(10)*time.Second)
 	defer cancel()
 	if err := serverwaiter.Wait(ctx, addr); err != nil {
-		contextLogger.WithError(err).Fatal("Rabbitmq failed to start in time")
+		sublogger.Fatal().AnErr("err", err).Msg("Rabbitmq failed to start in time")
 	}
-	contextLogger.Info("Rabbitmq is ready")
+	sublogger.Info().Msg("Rabbitmq is ready")
 
 	// establish connection to the RabbitMQ
 	conn, err := amqp.Dial(addr)
 	failOnError(err, "Failed to connect to RabbitMQ")
-	contextLogger.Info("Connected to rabbitmq")
+	sublogger.Info().Msg("Connected to rabbitmq")
 
 	// open channel
 	ch, err := conn.Channel()
 	failOnError(err, "Failed to open a channel")
-	contextLogger.Info("Opened a channel")
+	sublogger.Info().Msg("Opened a channel")
 
 	// declare queues
 	grabberQueue, err := ch.QueueDeclare(
@@ -50,7 +52,7 @@ func NewConnection(addr string) *Connection {
 		nil,       // arguments
 	)
 	failOnError(err, "Failed to declare a queue")
-	contextLogger.WithField("queue", grabberQueue.Name).Info("Declared a queue")
+	sublogger.Info().Str("queue", grabberQueue.Name).Msg("Declared a queue")
 
 	resultQueue, err := ch.QueueDeclare(
 		"result", // name
@@ -61,7 +63,7 @@ func NewConnection(addr string) *Connection {
 		nil,      // arguments
 	)
 	failOnError(err, "Failed to declare a queue")
-	contextLogger.WithField("queue", resultQueue.Name).Info("Declared a queue")
+	sublogger.Info().Str("queue", resultQueue.Name).Msg("Declared a queue")
 
 	return &Connection{
 		conn:         conn,
@@ -101,7 +103,7 @@ func (c *Connection) NewGrabberConsumer() <-chan amqp.Delivery {
 		nil,                 // args
 	)
 	failOnError(err, "Failed to register a consumer")
-	log.Info("Registered a grabber consumer")
+	log.Info().Msg("Registered a grabber consumer")
 	return msgs
 }
 
@@ -130,6 +132,6 @@ func (c *Connection) NewResultConsumer() <-chan amqp.Delivery {
 		nil,                // args
 	)
 	failOnError(err, "Failed to register a consumer")
-	log.Info("Registered a result consumer")
+	log.Info().Msg("Registered a result consumer")
 	return msgs
 }

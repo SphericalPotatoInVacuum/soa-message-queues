@@ -14,7 +14,9 @@ import (
 	"github.com/SphericalPotatoInVacuum/soa-message-queues/internal/safeset"
 	"github.com/SphericalPotatoInVacuum/soa-message-queues/internal/utils"
 	pb "github.com/SphericalPotatoInVacuum/soa-message-queues/proto_gen/pathfinder"
-	log "github.com/sirupsen/logrus"
+	"github.com/google/uuid"
+	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
 )
@@ -28,7 +30,9 @@ type pathfinderServer struct {
 	g *graphservice.GraphService
 }
 
-func (s *pathfinderServer) bfs(ctx context.Context, URL1 string, URL2 string) ([]string, error) {
+func (s *pathfinderServer) bfs(ctx context.Context, URL1 string, URL2 string, reqId string) ([]string, error) {
+	sublogger := log.With().Str("id", reqId).Logger()
+
 	doneChan := make(chan []string)
 	go func() {
 		visited := safeset.NewSafeSet()
@@ -54,7 +58,7 @@ func (s *pathfinderServer) bfs(ctx context.Context, URL1 string, URL2 string) ([
 				last := path[len(path)-1]
 				go func() {
 					visited.Insert(last)
-					log.WithField("page", last).Info("Checking neighbors")
+					sublogger.Info().Str("page", last).Msg("Checking neighbors")
 					newPaths := make([][]string, 0)
 					for _, link := range s.g.GetNeighbors(path[len(path)-1]) {
 						select {
@@ -86,7 +90,11 @@ func (s *pathfinderServer) bfs(ctx context.Context, URL1 string, URL2 string) ([
 				}
 			}
 
-			log.WithFields(log.Fields{"breadth": breadth, "N": N}).Info("Started fetching for new breadth level")
+			log.Info().
+				Int("breadth", breadth).
+				Int("N", N).
+				Msg("Started fetching for new breadth level")
+
 			g, _ := errgroup.WithContext(ctx)
 			for i := 0; i < N; i++ {
 				g.Go(func() error {
@@ -102,7 +110,7 @@ func (s *pathfinderServer) bfs(ctx context.Context, URL1 string, URL2 string) ([
 				})
 			}
 			if err := g.Wait(); err != nil {
-				log.Error(err)
+				sublogger.Error().Err(err).Msg("")
 				return
 			}
 		}
@@ -110,7 +118,7 @@ func (s *pathfinderServer) bfs(ctx context.Context, URL1 string, URL2 string) ([
 
 	select {
 	case <-ctx.Done():
-		log.Info("BFS timed out")
+		sublogger.Info().Msg("BFS timed out")
 		return nil, errors.New("Request took too long")
 	case path := <-doneChan:
 		return path, nil
@@ -120,18 +128,12 @@ func (s *pathfinderServer) bfs(ctx context.Context, URL1 string, URL2 string) ([
 func validateWikiUrl(urlStr string) error {
 	u, err := url.Parse(urlStr)
 	if err != nil {
-		log.WithError(
-			err,
-		).Error("Parse url failed")
 		return err
 	}
 
 	parts := strings.Split(u.Hostname(), ".")
 	if len(parts) < 2 || parts[len(parts)-2] != "wikipedia" || parts[len(parts)-1] != "org" {
 		err = fmt.Errorf("Expected wikipedia url, but received %s", urlStr)
-		log.WithError(
-			err,
-		).Error("Invalid wikipedia url")
 		return err
 	}
 
@@ -139,21 +141,24 @@ func validateWikiUrl(urlStr string) error {
 }
 
 func (s *pathfinderServer) Find(ctx context.Context, in *pb.FindRequest) (*pb.FindResponse, error) {
-	contextLogger := log.WithFields(log.Fields{
-		"URL1": in.URL1,
-		"URL2": in.URL2,
-	})
-	contextLogger.Infof("Processing request")
+	reqId := uuid.NewString()
+
+	sublogger := log.With().
+		Str("URL1", in.URL1).
+		Str("URL2", in.URL2).
+		Str("id", reqId).
+		Logger()
+	sublogger.Info().Msg("Processing request")
 	if err := validateWikiUrl(in.URL1); err != nil {
-		contextLogger.WithError(err).Info("URL1 validation failed")
+		sublogger.Info().AnErr("err", err).Msg("URL1 validation failed")
 		return nil, err
 	}
 	if err := validateWikiUrl(in.URL2); err != nil {
-		contextLogger.WithError(err).Info("URL2 validation failed")
+		sublogger.Info().AnErr("err", err).Msg("URL2 validation failed")
 		return nil, err
 	}
 	if in.URL1 == in.URL2 {
-		contextLogger.Info("Finished processing request")
+		sublogger.Info().Msg("Finished processing request")
 		return &pb.FindResponse{
 			Length: 0,
 			Path:   []string{in.URL1},
@@ -162,12 +167,12 @@ func (s *pathfinderServer) Find(ctx context.Context, in *pb.FindRequest) (*pb.Fi
 
 	ctx, cancel := context.WithTimeout(ctx, time.Duration(120)*time.Second)
 	defer cancel()
-	path, err := s.bfs(ctx, in.URL1, in.URL2)
+	path, err := s.bfs(ctx, in.URL1, in.URL2, reqId)
 	if err != nil {
 		return nil, err
 	}
 
-	contextLogger.Info("Finished processing request")
+	sublogger.Info().Msg("Finished processing request")
 	return &pb.FindResponse{
 		Length: int32(len(path) - 1),
 		Path:   path,
@@ -188,9 +193,9 @@ func serve(graph *graphservice.GraphService) {
 	}
 	lis, err := net.Listen("tcp", fmt.Sprintf("0.0.0.0:%s", port))
 	if err != nil {
-		log.Fatalf("failed to listen: %v", err)
+		log.Fatal().AnErr("err", err).Msg("Failed to listen")
 	}
-	log.Infof("listening on port: %s", lis.Addr())
+	log.Info().Str("addr", lis.Addr().String()).Msg("Listening")
 	var opts []grpc.ServerOption
 	grpcServer := grpc.NewServer(opts...)
 	pb.RegisterPathfinderServer(grpcServer, newServer(graph))
@@ -206,9 +211,7 @@ func getRabbitAddr() string {
 }
 
 func main() {
-	log.SetFormatter(&log.TextFormatter{
-		ForceColors: true,
-	})
+	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr})
 
 	graph := graphservice.NewGraphService(getRabbitAddr())
 	graph.Start(32)

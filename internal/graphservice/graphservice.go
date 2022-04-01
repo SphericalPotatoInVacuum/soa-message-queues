@@ -7,7 +7,7 @@ import (
 	"github.com/SphericalPotatoInVacuum/soa-message-queues/internal/utils"
 	grabber_pb "github.com/SphericalPotatoInVacuum/soa-message-queues/proto_gen/grabber"
 	"github.com/google/uuid"
-	log "github.com/sirupsen/logrus"
+	"github.com/rs/zerolog/log"
 	"github.com/streadway/amqp"
 	"google.golang.org/protobuf/proto"
 )
@@ -87,7 +87,7 @@ func (g *GraphService) discover(pageUrl string) string {
 		failOnError(err, "Failed marshal")
 	}
 	g.conn.GrabberProduce(body)
-	log.WithField("reqID", req.RequestID).Info("Put task to queue")
+	log.Info().Str("grabId", req.RequestID).Msg("Put task to queue")
 
 	ch := make(chan []string)
 	g.waiting.Put(reqId, ch)
@@ -100,7 +100,7 @@ func (g *GraphService) receive(consumer <-chan amqp.Delivery) {
 		resp := grabber_pb.GrabResponse{}
 		proto.Unmarshal(msg.Body, &resp)
 
-		log.WithField("reqID", resp.RequestID).Info("Got results from queue")
+		log.Info().Str("grabId", resp.RequestID).Msg("Got results from queue")
 		ch, _ := g.waiting.Get(resp.RequestID)
 		ch <- resp.URLs
 	}
