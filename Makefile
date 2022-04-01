@@ -22,7 +22,7 @@ push: build # Push containers to the registry
 	@echo " ====== Pushing images to the registry ======"
 	@$(compose) --profile client push
 
-up: build # Start server
+up: # Start server
 	@echo " ====== Launching server ======"
 	-@$(compose) up --scale grabber=8 rabbitmq grabber server
 	@$(MAKE) clean
